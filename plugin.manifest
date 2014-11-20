@@ -1,0 +1,6 @@
+pluginname=ExperienceApiPlugin
+pluginclassname=ExperienceApiPlugin
+origin=xabbuh
+version=0.0.1
+homepage=https://github.com/xabbuh/studip-experience-api-plugin
+studipMinVersion=3.0

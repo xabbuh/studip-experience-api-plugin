@@ -1,0 +1,23 @@
+{
+    "name": "xabbuh/studip-experience-api-plugin",
+    "description": "Integration of the Experience API into the Stud.IP LMS",
+    "keywords": ["Experience API", "xAPI", "Stud.IP", "Stud.IP plugin", "LRS", "Learning Record Store"],
+    "type": "studip-plugin",
+    "license": "MIT",
+    "homepage": "https://github.com/xabbuh/studip-experience-api-plugin",
+    "authors": [
+        {
+            "name": "Christian Flothmann",
+            "homepage": "https://github.com/xabbuh"
+        }
+    ],
+    "require": {
+        "php": "~5.3",
+        "xabbuh/xapi-model": "~1.0",
+        "xabbuh/xapi-storage-api": "~1.0",
+        "xabbuh/xapi-serializer": "~1.0",
+        "xabbuh/xapi-validator": "~1.0"
+    },
+    "minimum-stability": "dev",
+    "prefer-stable": true
+}
