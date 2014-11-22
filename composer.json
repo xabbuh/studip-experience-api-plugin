@@ -11,8 +11,14 @@
             "homepage": "https://github.com/xabbuh"
         }
     ],
+    "autoload": {
+        "psr-4": {
+            "Xabbuh\\ExperienceApiPlugin\\Storage\\PdoMysql\\": "PdoMysql"
+        }
+    },
     "require": {
         "php": "~5.3",
+        "rhumsaa/uuid": "~2.8",
         "xabbuh/xapi-model": "~1.0",
         "xabbuh/xapi-storage-api": "~1.0",
         "xabbuh/xapi-serializer": "~1.0",
