@@ -18,4 +18,18 @@ require __DIR__.'/vendor/autoload.php';
  */
 class ExperienceApiPlugin extends StudIPPlugin implements SystemPlugin
 {
+    /**
+     * {@inheritdoc}
+     */
+    public function perform($unconsumedPath)
+    {
+        require_once 'app/controllers/studip_controller.php';
+
+        $dispatcher = new Trails_Dispatcher(
+            $this->getPluginPath(),
+            rtrim(PluginEngine::getLink($this, array(), null), '/'),
+            null
+        );
+        $dispatcher->dispatch($unconsumedPath);
+    }
 }
