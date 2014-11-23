@@ -19,15 +19,16 @@ use Xabbuh\XApi\Model\Definition;
 use Xabbuh\XApi\Model\Group;
 use Xabbuh\XApi\Model\Statement;
 use Xabbuh\XApi\Model\StatementReference;
+use Xabbuh\XApi\Model\StatementsFilter;
 use Xabbuh\XApi\Model\Verb;
-use Xabbuh\XApi\Storage\Api\StatementManager as BaseStatementManager;
+use Xabbuh\XApi\Storage\Api\StatementManagerInterface;
 
 /**
  * StatementManager implementation for MySQL based on the PHP PDO library.
  *
  * @author Christian Flothmann <christian.flothmann@xabbuh.de>
  */
-class StatementManager extends BaseStatementManager
+class StatementManager implements StatementManagerInterface
 {
     /**
      * @var \PDO
@@ -42,7 +43,7 @@ class StatementManager extends BaseStatementManager
     /**
      * {@inheritdoc}
      */
-    public function findStatementBy(array $criteria)
+    public function findStatementById($statementId)
     {
         $stmt = $this->pdo->prepare(
             'SELECT
@@ -81,7 +82,7 @@ class StatementManager extends BaseStatementManager
             WHERE
               s.uuid = :uuid'
         );
-        $stmt->bindValue(':uuid', $criteria['id']);
+        $stmt->bindValue(':uuid', $statementId);
         $stmt->execute();
 
         if ($stmt->rowCount() !== 1) {
@@ -135,7 +136,15 @@ class StatementManager extends BaseStatementManager
     /**
      * {@inheritdoc}
      */
-    public function findStatementsBy(array $criteria)
+    public function findVoidedStatementById($voidedStatementId)
+    {
+        // TODO: Implement findVoidedStatementById() method.
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function findStatementsBy(StatementsFilter $filter)
     {
         // TODO: Implement findStatementsBy() method.
     }
