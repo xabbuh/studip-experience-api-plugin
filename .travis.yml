@@ -1,0 +1,14 @@
+language: php
+
+php:
+  - 5.3
+  - 5.4
+  - 5.5
+  - 5.6
+
+install:
+  - composer install
+
+before_script:
+  - mysql -e 'CREATE DATABASE experience_api_plugin DEFAULT CHARACTER SET latin1 COLLATE latin1_german1_ci'
+  - mysql experience_api_plugin < db/install.sql

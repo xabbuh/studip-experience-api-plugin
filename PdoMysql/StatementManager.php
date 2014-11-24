@@ -21,6 +21,7 @@ use Xabbuh\XApi\Model\Statement;
 use Xabbuh\XApi\Model\StatementReference;
 use Xabbuh\XApi\Model\StatementsFilter;
 use Xabbuh\XApi\Model\Verb;
+use Xabbuh\XApi\Storage\Api\Exception\NotFoundException;
 use Xabbuh\XApi\Storage\Api\StatementManagerInterface;
 
 /**
@@ -86,7 +87,7 @@ class StatementManager implements StatementManagerInterface
         $stmt->execute();
 
         if ($stmt->rowCount() !== 1) {
-            return null;
+            throw new NotFoundException();
         }
 
         $data = $stmt->fetch(\PDO::FETCH_ASSOC);

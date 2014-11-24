@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<phpunit colors="true" bootstrap="vendor/autoload.php">
+    <php>
+        <env name="mysql_host" value="localhost" />
+        <env name="mysql_port" value="9000" />
+        <env name="mysql_database" value="experience_api_plugin" />
+        <env name="mysql_user" value="root" />
+        <env name="mysql_password" value="" />
+    </php>
+
+    <testsuites>
+        <testsuite name="Stud.IP Experience API plugin">
+            <directory>./tests</directory>
+        </testsuite>
+    </testsuites>
+
+    <filter>
+        <whitelist>
+            <directory>.</directory>
+            <exclude>
+                <file>bootstrap.php</file>
+                <directory>./tests</directory>
+                <directory>./vendor</directory>
+                <directory>./views</directory>
+            </exclude>
+        </whitelist>
+    </filter>
+</phpunit>
