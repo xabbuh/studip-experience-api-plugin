@@ -9,14 +9,13 @@
  * file that was distributed with this source code.
  */
 
-use Xabbuh\ExperienceApiPlugin\Storage\PdoMysql\StatementManager;
+use Xabbuh\ExperienceApiPlugin\Storage\PdoMysql\StatementRepository;
 use Xabbuh\XApi\Serializer\ActorSerializer;
-use Xabbuh\XApi\Serializer\DocumentSerializer;
+use Xabbuh\XApi\Serializer\DocumentDataSerializer;
 use Xabbuh\XApi\Serializer\Serializer;
 use Xabbuh\XApi\Serializer\SerializerRegistry;
 use Xabbuh\XApi\Serializer\StatementResultSerializer;
 use Xabbuh\XApi\Serializer\StatementSerializer;
-use Xabbuh\XApi\Storage\Api\StatementManagerInterface;
 
 /**
  * REST API endpoints controllers.
@@ -33,9 +32,9 @@ class ApiController extends StudipController
     private $serializerRegistry;
 
     /**
-     * @var StatementManagerInterface
+     * @var StatementRepository
      */
-    private $statementManager;
+    private $statementRepository;
 
     public function __construct($dispatcher)
     {
@@ -46,9 +45,9 @@ class ApiController extends StudipController
         $this->serializerRegistry->setStatementSerializer(new StatementSerializer($serializer));
         $this->serializerRegistry->setStatementResultSerializer(new StatementResultSerializer($serializer));
         $this->serializerRegistry->setActorSerializer(new ActorSerializer($serializer));
-        $this->serializerRegistry->setDocumentSerializer(new DocumentSerializer($serializer));
+        $this->serializerRegistry->setDocumentDataSerializer(new DocumentDataSerializer($serializer));
 
-        $this->statementManager = new StatementManager(DBManager::get());
+        $this->statementRepository = new StatementRepository(DBManager::get());
     }
 
     public function statements_action()
@@ -60,11 +59,11 @@ class ApiController extends StudipController
                 break;
             case 'POST':
                 $statement = $serializer->deserializeStatement($this->getRequestBody());
-                $id = $this->statementManager->save($statement);
+                $id = $this->statementRepository->storeStatement($statement);
                 $this->data = json_encode(array($id));
                 break;
             case 'GET':
-                $statement = $this->statementManager->findStatementById(Request::get('statementId'));
+                $statement = $this->statementRepository->findStatementById(Request::get('statementId'));
 
                 if (null === $statement) {
                     $this->response->set_status(404);

@@ -11,20 +11,20 @@
 
 namespace Xabbuh\ExperienceApiPlugin\Tests\Functional;
 
-use Xabbuh\ExperienceApiPlugin\Storage\PdoMysql\StatementManager;
-use Xabbuh\XApi\Storage\Api\Test\Functional\StatementManagerTest as BaseStatementManagerTest;
+use Xabbuh\ExperienceApiPlugin\Storage\PdoMysql\StatementRepository;
+use Xabbuh\XApi\Storage\Api\Test\Functional\StatementRepositoryTest as BaseStatementRepositoryTest;
 
 /**
  * @author Christian Flothmann <christian.flothmann@xabbuh.de>
  */
-class StatementManagerTest extends BaseStatementManagerTest
+class StatementRepositoryTest extends BaseStatementRepositoryTest
 {
     /**
      * @var \PDO
      */
     private $pdo;
 
-    protected function createStatementManager()
+    protected function createStatementRepository()
     {
         $host = $_ENV['mysql_host'];
         $port = $_ENV['mysql_port'];
@@ -34,7 +34,7 @@ class StatementManagerTest extends BaseStatementManagerTest
         $dsn = sprintf('mysql:dbname=%s;host=%s;port=%d',$database, $host, $port);
         $this->pdo = new \PDO($dsn, $user, $password);
 
-        return new StatementManager($this->pdo);
+        return new StatementRepository($this->pdo);
     }
 
     protected function cleanDatabase()

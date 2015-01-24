@@ -11,25 +11,22 @@
 
 namespace Xabbuh\ExperienceApiPlugin\Storage\PdoMysql;
 
-use Rhumsaa\Uuid\Uuid;
 use Xabbuh\XApi\Model\Activity;
 use Xabbuh\XApi\Model\Actor;
 use Xabbuh\XApi\Model\Agent;
 use Xabbuh\XApi\Model\Definition;
 use Xabbuh\XApi\Model\Group;
-use Xabbuh\XApi\Model\Statement;
 use Xabbuh\XApi\Model\StatementReference;
-use Xabbuh\XApi\Model\StatementsFilter;
-use Xabbuh\XApi\Model\Verb;
-use Xabbuh\XApi\Storage\Api\Exception\NotFoundException;
-use Xabbuh\XApi\Storage\Api\StatementManagerInterface;
+use Xabbuh\XApi\Storage\Api\Mapping\MappedStatement;
+use Xabbuh\XApi\Storage\Api\Mapping\MappedVerb;
+use Xabbuh\XApi\Storage\Api\StatementRepository as BaseStatementRepository;
 
 /**
  * StatementManager implementation for MySQL based on the PHP PDO library.
  *
  * @author Christian Flothmann <christian.flothmann@xabbuh.de>
  */
-class StatementManager implements StatementManagerInterface
+class StatementRepository extends BaseStatementRepository
 {
     /**
      * @var \PDO
@@ -44,7 +41,21 @@ class StatementManager implements StatementManagerInterface
     /**
      * {@inheritdoc}
      */
-    public function findStatementById($statementId)
+    protected function findMappedStatement(array $criteria)
+    {
+        $mappedStatements = $this->findMappedStatements($criteria);
+
+        if (1 !== count($mappedStatements)) {
+            return null;
+        }
+
+        return $mappedStatements[0];
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    protected function findMappedStatements(array $criteria)
     {
         $stmt = $this->pdo->prepare(
             'SELECT
@@ -83,95 +94,81 @@ class StatementManager implements StatementManagerInterface
             WHERE
               s.uuid = :uuid'
         );
-        $stmt->bindValue(':uuid', $statementId);
+        $stmt->bindValue(':uuid', $criteria['id']);
         $stmt->execute();
 
-        if ($stmt->rowCount() !== 1) {
-            throw new NotFoundException();
-        }
+        $mappedStatements = array();
 
-        $data = $stmt->fetch(\PDO::FETCH_ASSOC);
-
-        if ('agent' === $data['type']) {
-            $actor = new Agent($data['mbox'], $data['mbox_sha1_sum'], $data['open_id'], null, $data['name']);
-        } else {
-            $stmt = $this->pdo->prepare(
-                'SELECT
-                  *
-                FROM
-                  xapi_actors
-                WHERE
-                  group_id = :group_id'
-            );
-            $stmt->bindValue(':group_id', $data['actor_id']);
-            $stmt->execute();
-            $members = array();
-
-            while ($row = $stmt->fetch(\PDO::FETCH_ASSOC)) {
-                $members[] = new Agent($row['mbox'], $row['mbox_sha1_sum'], $row['open_id'], null, $row['name']);
-            }
-
-            $actor = new Group($data['mbox'], $data['mbox_sha1_sum'], $data['open_id'], null, $data['name'], $members);
-        }
-
-        $verb = new Verb($data['iri'], unserialize($data['display']));
-
-        $object = null;
-        if ('activity' === $data['object_type']) {
-            $definition = null;
-            if (null !== $data['definition_name'] && null !== $data['definition_description']) {
-                $definition = new Definition(
-                    unserialize($data['definition_name']),
-                    unserialize($data['definition_description']),
-                    $data['definition_type']
+        while ($data = $stmt->fetch(\PDO::FETCH_ASSOC)) {
+            if ('agent' === $data['type']) {
+                $actor = new Agent($data['mbox'], $data['mbox_sha1_sum'], $data['open_id'], null, $data['name']);
+            } else {
+                $stmt = $this->pdo->prepare(
+                    'SELECT
+                      *
+                    FROM
+                      xapi_actors
+                    WHERE
+                      group_id = :group_id'
                 );
+                $stmt->bindValue(':group_id', $data['actor_id']);
+                $stmt->execute();
+                $members = array();
+
+                while ($row = $stmt->fetch(\PDO::FETCH_ASSOC)) {
+                    $members[] = new Agent($row['mbox'], $row['mbox_sha1_sum'], $row['open_id'], null, $row['name']);
+                }
+
+                $actor = new Group($data['mbox'], $data['mbox_sha1_sum'], $data['open_id'], null, $data['name'], $members);
             }
-            $object = new Activity($data['activity_id'], $definition);
-        } elseif ('statement_reference' === $data['object_type']) {
-            $object = new StatementReference($data['referenced_statement_id']);
+
+            $mappedVerb = new MappedVerb();
+            $mappedVerb->id = $data['iri'];
+            $mappedVerb->display = unserialize($data['display']);
+
+            $object = null;
+            if ('activity' === $data['object_type']) {
+                $definition = null;
+                if (null !== $data['definition_name'] && null !== $data['definition_description']) {
+                    $definition = new Definition(
+                        unserialize($data['definition_name']),
+                        unserialize($data['definition_description']),
+                        $data['definition_type']
+                    );
+                }
+                $object = new Activity($data['activity_id'], $definition);
+            } elseif ('statement_reference' === $data['object_type']) {
+                $object = new StatementReference($data['referenced_statement_id']);
+            }
+
+            $mappedStatement = new MappedStatement();
+            $mappedStatement->id = $data['uuid'];
+            $mappedStatement->actor = $actor;
+            $mappedStatement->verb = $mappedVerb;
+            $mappedStatement->object = $object;
+
+            $mappedStatements[] = $mappedStatement;
         }
 
-        return new Statement($data['uuid'], $actor, $verb, $object);
+        return $mappedStatements;
     }
 
     /**
      * {@inheritdoc}
      */
-    public function findVoidedStatementById($voidedStatementId)
-    {
-        // TODO: Implement findVoidedStatementById() method.
-    }
-
-    /**
-     * {@inheritdoc}
-     */
-    public function findStatementsBy(StatementsFilter $filter)
-    {
-        // TODO: Implement findStatementsBy() method.
-    }
-
-    /**
-     * {@inheritdoc}
-     */
-    public function save(Statement $statement, $flush = true)
+    protected function storeMappedStatement(MappedStatement $mappedStatement, $flush)
     {
         $actorId = null;
         $objectId = null;
         $objectType = null;
-        $uuid = $statement->getId();
-
-        if (null === $uuid) {
-            $uuid = Uuid::uuid4()->toString();
-        }
 
         // save the actor
-        $actor = $statement->getActor();
-        if ($actor instanceof Agent) {
-            $actorId = $this->storeActor($statement->getActor(), 'agent');
-        } elseif ($actor instanceof Group) {
-            $actorId = $this->storeActor($actor, 'group');
+        if ($mappedStatement->actor instanceof Agent) {
+            $actorId = $this->storeActor($mappedStatement->actor, 'agent');
+        } elseif ($mappedStatement->actor instanceof Group) {
+            $actorId = $this->storeActor($mappedStatement->actor, 'group');
 
-            foreach ($actor->getMembers() as $agent) {
+            foreach ($mappedStatement->actor->getMembers() as $agent) {
                 $this->storeActor($agent, 'agent', $actorId);
             }
         }
@@ -184,15 +181,14 @@ class StatementManager implements StatementManagerInterface
               iri = :iri,
               display = :display'
         );
-        $stmt->bindValue(':iri', $statement->getVerb()->getId());
-        $stmt->bindValue(':display', serialize($statement->getVerb()->getDisplay()));
+        $stmt->bindValue(':iri', $mappedStatement->verb->id);
+        $stmt->bindValue(':display', serialize($mappedStatement->verb->display));
         $stmt->execute();
         $verbId = $this->pdo->lastInsertId();
 
         // save the object
-        $object = $statement->getObject();
-        if ($object instanceof Activity) {
-            $definition = $object->getDefinition();
+        if ($mappedStatement->object instanceof Activity) {
+            $definition = $mappedStatement->object->getDefinition();
             $stmt = $this->pdo->prepare(
                 'INSERT INTO
                   xapi_objects
@@ -202,21 +198,21 @@ class StatementManager implements StatementManagerInterface
                   description = :description,
                   type = :type'
             );
-            $stmt->bindValue(':activity_id', $object->getId());
+            $stmt->bindValue(':activity_id', $mappedStatement->object->getId());
             $stmt->bindValue(':name', null !== $definition ? serialize($definition->getName()) : null);
             $stmt->bindValue(':description', null !== $definition ? serialize($definition->getDescription()) : null);
             $stmt->bindValue(':type', null !== $definition ? $definition->getType() : null);
             $stmt->execute();
             $objectId = $this->pdo->lastInsertId();
             $objectType = 'activity';
-        } elseif ($object instanceof StatementReference) {
+        } elseif ($mappedStatement->object instanceof StatementReference) {
             $stmt = $this->pdo->prepare(
                 'INSERT INTO
                   xapi_objects
                 SET
                   statement_id = :statement_id'
             );
-            $stmt->bindValue(':statement_id', $object->getStatementId());
+            $stmt->bindValue(':statement_id', $mappedStatement->object->getStatementId());
             $stmt->execute();
             $objectId = $this->pdo->lastInsertId();
             $objectType = 'statement_reference';
@@ -233,14 +229,12 @@ class StatementManager implements StatementManagerInterface
               object_id = :object_id,
               object_type = :object_type'
         );
-        $stmt->bindValue(':uuid', $uuid);
+        $stmt->bindValue(':uuid', $mappedStatement->id);
         $stmt->bindValue(':actor_id', $actorId);
         $stmt->bindValue(':verb_id', $verbId);
         $stmt->bindValue(':object_id', $objectId);
         $stmt->bindValue(':object_type', $objectType);
         $stmt->execute();
-
-        return $uuid;
     }
 
     private function storeActor(Actor $actor, $type, $groupId = null)
