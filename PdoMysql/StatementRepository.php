@@ -16,6 +16,8 @@ use Xabbuh\XApi\Model\Actor;
 use Xabbuh\XApi\Model\Agent;
 use Xabbuh\XApi\Model\Definition;
 use Xabbuh\XApi\Model\Group;
+use Xabbuh\XApi\Model\Result;
+use Xabbuh\XApi\Model\Score;
 use Xabbuh\XApi\Model\StatementReference;
 use Xabbuh\XApi\Storage\Api\Mapping\MappedStatement;
 use Xabbuh\XApi\Storage\Api\Mapping\MappedVerb;
@@ -64,6 +66,15 @@ class StatementRepository extends BaseStatementRepository
               s.verb_id,
               s.object_id,
               s.object_type,
+              s.has_result,
+              s.scaled,
+              s.raw,
+              s.min,
+              s.max,
+              s.success,
+              s.completion,
+              s.response,
+              s.duration,
               a.group_id,
               a.type,
               a.name,
@@ -147,6 +158,16 @@ class StatementRepository extends BaseStatementRepository
             $mappedStatement->verb = $mappedVerb;
             $mappedStatement->object = $object;
 
+            if (1 === (int) $data['has_result']) {
+                $mappedStatement->result = new Result(
+                    new Score($data['scaled'], $data['raw'], $data['min'], $data['max']),
+                    1 === (int) $data['success'],
+                    1 === (int) $data['completion'],
+                    $data['response'],
+                    $data['duration']
+                );
+            }
+
             $mappedStatements[] = $mappedStatement;
         }
 
@@ -218,6 +239,8 @@ class StatementRepository extends BaseStatementRepository
             $objectType = 'statement_reference';
         }
 
+        $result = $mappedStatement->result;
+
         // save the statement itself
         $stmt = $this->pdo->prepare(
             'INSERT INTO
@@ -227,13 +250,31 @@ class StatementRepository extends BaseStatementRepository
               actor_id = :actor_id,
               verb_id = :verb_id,
               object_id = :object_id,
-              object_type = :object_type'
+              object_type = :object_type,
+              has_result = :has_result,
+              scaled = :scaled,
+              raw = :raw,
+              min = :min,
+              max = :max,
+              success = :success,
+              completion = :completion,
+              response = :response,
+              duration = :duration'
         );
         $stmt->bindValue(':uuid', $mappedStatement->id);
         $stmt->bindValue(':actor_id', $actorId);
         $stmt->bindValue(':verb_id', $verbId);
         $stmt->bindValue(':object_id', $objectId);
         $stmt->bindValue(':object_type', $objectType);
+        $stmt->bindValue(':has_result', null !== $result);
+        $stmt->bindValue(':scaled', null !== $result ? $result->getScore()->getScaled() : null);
+        $stmt->bindValue(':raw', null !== $result ? $result->getScore()->getRaw() : null);
+        $stmt->bindValue(':min', null !== $result ? $result->getScore()->getMin() : null);
+        $stmt->bindValue(':max', null !== $result ? $result->getScore()->getMax() : null);
+        $stmt->bindValue(':success', null !== $result ? $result->getSuccess() : null);
+        $stmt->bindValue(':completion', null !== $result ? $result->getCompletion() : null);
+        $stmt->bindValue(':response', null !== $result ? $result->getResponse() : null);
+        $stmt->bindValue(':duration', null !== $result ? $result->getDuration() : null);
         $stmt->execute();
     }
 

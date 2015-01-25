@@ -12,8 +12,8 @@ CREATE TABLE `xapi_actors` (
 CREATE TABLE `xapi_objects` (
   `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
   `activity_id` varchar(255) COLLATE latin1_german1_ci NOT NULL,
-  `name` text COLLATE latin1_german1_ci,
-  `description` text COLLATE latin1_german1_ci,
+  `name` text COLLATE latin1_german1_ci DEFAULT NULL,
+  `description` text COLLATE latin1_german1_ci DEFAULT NULL,
   `type` varchar(255) COLLATE latin1_german1_ci DEFAULT NULL,
   `statement_id` varchar(36) COLLATE latin1_german1_ci NOT NULL,
   PRIMARY KEY (`id`)
@@ -25,6 +25,15 @@ CREATE TABLE `xapi_statements` (
   `actor_id` int(10) unsigned NOT NULL,
   `object_id` int(10) unsigned NOT NULL,
   `object_type` enum('activity','statement_reference') COLLATE latin1_german1_ci NOT NULL,
+  `has_result` tinyint(3) unsigned NOT NULL,
+  `scaled` double DEFAULT NULL,
+  `raw` double DEFAULT NULL,
+  `min` double DEFAULT NULL,
+  `max` double DEFAULT NULL,
+  `success` tinyint(3) unsigned DEFAULT NULL,
+  `completion` tinyint(3) unsigned DEFAULT NULL,
+  `response` text DEFAULT NULL,
+  `duration` text DEFAULT NULL,
   PRIMARY KEY (`uuid`)
 );
 
