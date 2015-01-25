@@ -11,6 +11,7 @@
 
 namespace Xabbuh\ExperienceApiPlugin\Storage\PdoMysql;
 
+use Xabbuh\XApi\Model\Account;
 use Xabbuh\XApi\Model\Activity;
 use Xabbuh\XApi\Model\Actor;
 use Xabbuh\XApi\Model\Agent;
@@ -81,6 +82,9 @@ class StatementRepository extends BaseStatementRepository
               a.mbox,
               a.mbox_sha1_sum,
               a.open_id,
+              a.has_account,
+              a.account_name,
+              a.account_home_page,
               v.iri,
               v.display,
               o.activity_id,
@@ -111,8 +115,14 @@ class StatementRepository extends BaseStatementRepository
         $mappedStatements = array();
 
         while ($data = $stmt->fetch(\PDO::FETCH_ASSOC)) {
+            $actorAccount = null;
+
+            if (1 === (int) $data['has_account']) {
+                $actorAccount = new Account($data['account_name'], $data['account_home_page']);
+            }
+
             if ('agent' === $data['type']) {
-                $actor = new Agent($data['mbox'], $data['mbox_sha1_sum'], $data['open_id'], null, $data['name']);
+                $actor = new Agent($data['mbox'], $data['mbox_sha1_sum'], $data['open_id'], $actorAccount, $data['name']);
             } else {
                 $stmt = $this->pdo->prepare(
                     'SELECT
@@ -127,10 +137,16 @@ class StatementRepository extends BaseStatementRepository
                 $members = array();
 
                 while ($row = $stmt->fetch(\PDO::FETCH_ASSOC)) {
-                    $members[] = new Agent($row['mbox'], $row['mbox_sha1_sum'], $row['open_id'], null, $row['name']);
+                    $memberAccount = null;
+
+                    if (1 === (int) $row['has_account']) {
+                        $memberAccount = new Account($row['account_name'], $row['account_home_page']);
+                    }
+
+                    $members[] = new Agent($row['mbox'], $row['mbox_sha1_sum'], $row['open_id'], $memberAccount, $row['name']);
                 }
 
-                $actor = new Group($data['mbox'], $data['mbox_sha1_sum'], $data['open_id'], null, $data['name'], $members);
+                $actor = new Group($data['mbox'], $data['mbox_sha1_sum'], $data['open_id'], $actorAccount, $data['name'], $members);
             }
 
             $mappedVerb = new MappedVerb();
@@ -280,6 +296,8 @@ class StatementRepository extends BaseStatementRepository
 
     private function storeActor(Actor $actor, $type, $groupId = null)
     {
+        $account = $actor->getAccount();
+
         $stmt = $this->pdo->prepare(
             'INSERT INTO
               xapi_actors
@@ -289,7 +307,10 @@ class StatementRepository extends BaseStatementRepository
               name = :name,
               mbox = :mbox,
               mbox_sha1_sum = :mbox_sha1_sum,
-              open_id = :open_id'
+              open_id = :open_id,
+              has_account = :has_account,
+              account_name = :account_name,
+              account_home_page = :account_home_page'
         );
         $stmt->bindValue(':group_id', $groupId);
         $stmt->bindValue(':type', $type);
@@ -297,6 +318,9 @@ class StatementRepository extends BaseStatementRepository
         $stmt->bindValue(':mbox', $actor->getMbox());
         $stmt->bindValue(':mbox_sha1_sum', $actor->getMboxSha1Sum());
         $stmt->bindValue(':open_id', $actor->getOpenId());
+        $stmt->bindValue(':has_account', null !== $account);
+        $stmt->bindValue(':account_name', null !== $account ? $account->getName() : null);
+        $stmt->bindValue(':account_home_page', null !== $account ? $account->getHomePage() : null);
         $stmt->execute();
 
         return $this->pdo->lastInsertId();

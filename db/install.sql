@@ -6,6 +6,9 @@ CREATE TABLE `xapi_actors` (
   `mbox` varchar(255) COLLATE latin1_german1_ci DEFAULT NULL,
   `mbox_sha1_sum` varchar(255) COLLATE latin1_german1_ci DEFAULT NULL,
   `open_id` varchar(255) COLLATE latin1_german1_ci DEFAULT NULL,
+  `has_account` tinyint(3) unsigned NOT NULL,
+  `account_name` varchar(255) COLLATE latin1_german1_ci DEFAULT NULL,
+  `account_home_page` varchar(255) COLLATE latin1_german1_ci DEFAULT NULL,
   PRIMARY KEY (`id`)
 );
 
