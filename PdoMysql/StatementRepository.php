@@ -64,9 +64,14 @@ class StatementRepository extends BaseStatementRepository
             'SELECT
               s.uuid,
               s.actor_id,
-              s.verb_id,
-              s.object_id,
+              s.verb_iri,
+              s.verb_display,
               s.object_type,
+              s.activity_id,
+              s.activity_name,
+              s.activity_description,
+              s.activity_type,
+              s.referenced_statement_id,
               s.has_result,
               s.scaled,
               s.raw,
@@ -84,28 +89,13 @@ class StatementRepository extends BaseStatementRepository
               a.open_id,
               a.has_account,
               a.account_name,
-              a.account_home_page,
-              v.iri,
-              v.display,
-              o.activity_id,
-              o.name AS definition_name,
-              o.description AS definition_description,
-              o.type AS definition_type,
-              o.statement_id AS referenced_statement_id
+              a.account_home_page
             FROM
               xapi_statements AS s
             INNER JOIN
               xapi_actors AS a
             ON
               s.actor_id = a.id
-            INNER JOIN
-              xapi_verbs AS v
-            ON
-              s.verb_id = v.id
-            LEFT JOIN
-              xapi_objects AS o
-            ON
-              s.object_id = o.id
             WHERE
               s.uuid = :uuid'
         );
@@ -150,17 +140,17 @@ class StatementRepository extends BaseStatementRepository
             }
 
             $mappedVerb = new MappedVerb();
-            $mappedVerb->id = $data['iri'];
-            $mappedVerb->display = unserialize($data['display']);
+            $mappedVerb->id = $data['verb_iri'];
+            $mappedVerb->display = unserialize($data['verb_display']);
 
             $object = null;
             if ('activity' === $data['object_type']) {
                 $definition = null;
-                if (null !== $data['definition_name'] && null !== $data['definition_description']) {
+                if (null !== $data['activity_name'] && null !== $data['activity_description']) {
                     $definition = new Definition(
-                        unserialize($data['definition_name']),
-                        unserialize($data['definition_description']),
-                        $data['definition_type']
+                        unserialize($data['activity_name']),
+                        unserialize($data['activity_description']),
+                        $data['activity_type']
                     );
                 }
                 $object = new Activity($data['activity_id'], $definition);
@@ -210,52 +200,12 @@ class StatementRepository extends BaseStatementRepository
             }
         }
 
-        // save the verb
-        $stmt = $this->pdo->prepare(
-            'INSERT INTO
-              xapi_verbs
-            SET
-              iri = :iri,
-              display = :display'
-        );
-        $stmt->bindValue(':iri', $mappedStatement->verb->id);
-        $stmt->bindValue(':display', serialize($mappedStatement->verb->display));
-        $stmt->execute();
-        $verbId = $this->pdo->lastInsertId();
-
-        // save the object
-        if ($mappedStatement->object instanceof Activity) {
-            $definition = $mappedStatement->object->getDefinition();
-            $stmt = $this->pdo->prepare(
-                'INSERT INTO
-                  xapi_objects
-                SET
-                  activity_id = :activity_id,
-                  name = :name,
-                  description = :description,
-                  type = :type'
-            );
-            $stmt->bindValue(':activity_id', $mappedStatement->object->getId());
-            $stmt->bindValue(':name', null !== $definition ? serialize($definition->getName()) : null);
-            $stmt->bindValue(':description', null !== $definition ? serialize($definition->getDescription()) : null);
-            $stmt->bindValue(':type', null !== $definition ? $definition->getType() : null);
-            $stmt->execute();
-            $objectId = $this->pdo->lastInsertId();
-            $objectType = 'activity';
-        } elseif ($mappedStatement->object instanceof StatementReference) {
-            $stmt = $this->pdo->prepare(
-                'INSERT INTO
-                  xapi_objects
-                SET
-                  statement_id = :statement_id'
-            );
-            $stmt->bindValue(':statement_id', $mappedStatement->object->getStatementId());
-            $stmt->execute();
-            $objectId = $this->pdo->lastInsertId();
-            $objectType = 'statement_reference';
-        }
-
         $result = $mappedStatement->result;
+        $activityId = null;
+        $activityName = null;
+        $activityDescription = null;
+        $activityType = null;
+        $referencedStatementId = null;
 
         // save the statement itself
         $stmt = $this->pdo->prepare(
@@ -264,9 +214,14 @@ class StatementRepository extends BaseStatementRepository
             SET
               uuid = :uuid,
               actor_id = :actor_id,
-              verb_id = :verb_id,
-              object_id = :object_id,
+              verb_iri = :verb_iri,
+              verb_display = :verb_display,
               object_type = :object_type,
+              activity_id = :activity_id,
+              activity_name = :activity_name,
+              activity_description = :activity_description,
+              activity_type = :activity_type,
+              referenced_statement_id = :referenced_statement_id,
               has_result = :has_result,
               scaled = :scaled,
               raw = :raw,
@@ -279,9 +234,31 @@ class StatementRepository extends BaseStatementRepository
         );
         $stmt->bindValue(':uuid', $mappedStatement->id);
         $stmt->bindValue(':actor_id', $actorId);
-        $stmt->bindValue(':verb_id', $verbId);
-        $stmt->bindValue(':object_id', $objectId);
+        $stmt->bindValue(':verb_iri', $mappedStatement->verb->id);
+        $stmt->bindValue(':verb_display', serialize($mappedStatement->verb->display));
+
+        if ($mappedStatement->object instanceof Activity) {
+            $definition = $mappedStatement->object->getDefinition();
+
+            $objectType = 'activity';
+            $activityId = $mappedStatement->object->getId();
+
+            if (null !== $definition) {
+                $activityName = serialize($definition->getName());
+                $activityDescription = serialize($definition->getDescription());
+                $activityType = $definition->getType();
+            }
+        } elseif ($mappedStatement->object instanceof StatementReference) {
+            $objectType = 'statement_reference';
+            $referencedStatementId = $mappedStatement->object->getStatementId();
+        }
+
         $stmt->bindValue(':object_type', $objectType);
+        $stmt->bindValue(':activity_id', $activityId);
+        $stmt->bindValue(':activity_name', $activityName);
+        $stmt->bindValue(':activity_description', $activityDescription);
+        $stmt->bindValue(':activity_type', $activityType);
+        $stmt->bindValue(':referenced_statement_id', $referencedStatementId);
         $stmt->bindValue(':has_result', null !== $result);
         $stmt->bindValue(':scaled', null !== $result ? $result->getScore()->getScaled() : null);
         $stmt->bindValue(':raw', null !== $result ? $result->getScore()->getRaw() : null);

@@ -12,22 +12,17 @@ CREATE TABLE `xapi_actors` (
   PRIMARY KEY (`id`)
 );
 
-CREATE TABLE `xapi_objects` (
-  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
-  `activity_id` varchar(255) COLLATE latin1_german1_ci NOT NULL,
-  `name` text COLLATE latin1_german1_ci DEFAULT NULL,
-  `description` text COLLATE latin1_german1_ci DEFAULT NULL,
-  `type` varchar(255) COLLATE latin1_german1_ci DEFAULT NULL,
-  `statement_id` varchar(36) COLLATE latin1_german1_ci NOT NULL,
-  PRIMARY KEY (`id`)
-);
-
 CREATE TABLE `xapi_statements` (
   `uuid` varchar(36) COLLATE latin1_german1_ci NOT NULL,
-  `verb_id` int(10) unsigned NOT NULL,
   `actor_id` int(10) unsigned NOT NULL,
-  `object_id` int(10) unsigned NOT NULL,
+  `verb_iri` varchar(255) COLLATE latin1_german1_ci NOT NULL,
+  `verb_display` text COLLATE latin1_german1_ci NOT NULL,
   `object_type` enum('activity','statement_reference') COLLATE latin1_german1_ci NOT NULL,
+  `activity_id` varchar(255) COLLATE latin1_german1_ci DEFAULT NULL,
+  `activity_name` text COLLATE latin1_german1_ci DEFAULT NULL,
+  `activity_description` text COLLATE latin1_german1_ci DEFAULT NULL,
+  `activity_type` varchar(255) COLLATE latin1_german1_ci DEFAULT NULL,
+  `referenced_statement_id` varchar(36) COLLATE latin1_german1_ci DEFAULT NULL,
   `has_result` tinyint(3) unsigned NOT NULL,
   `scaled` double DEFAULT NULL,
   `raw` double DEFAULT NULL,
@@ -38,11 +33,4 @@ CREATE TABLE `xapi_statements` (
   `response` text DEFAULT NULL,
   `duration` text DEFAULT NULL,
   PRIMARY KEY (`uuid`)
-);
-
-CREATE TABLE `xapi_verbs` (
-  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
-  `iri` varchar(255) COLLATE latin1_german1_ci NOT NULL,
-  `display` text COLLATE latin1_german1_ci NOT NULL,
-  PRIMARY KEY (`id`)
 );
