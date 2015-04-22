@@ -24,7 +24,7 @@ use Xabbuh\XApi\Serializer\StatementSerializer;
  *
  * @property string $data
  */
-class ApiController extends StudipController
+class LrsController extends StudipController
 {
     /**
      * @var SerializerRegistry
