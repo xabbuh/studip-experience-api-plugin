@@ -12,6 +12,20 @@ CREATE TABLE `xapi_actors` (
   PRIMARY KEY (`id`)
 );
 
+CREATE TABLE `xapi_course_lrs` (
+  `course_id` varchar(255) COLLATE latin1_german1_ci NOT NULL,
+  `lrs_id` int(10) unsigned NOT NULL,
+  PRIMARY KEY (`course_id`, `lrs_id`),
+  UNIQUE INDEX (`course_id`)
+);
+
+CREATE TABLE `xapi_lrs` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `name` varchar(255) COLLATE latin1_german1_ci DEFAULT NULL,
+  `created_by` varchar(255) COLLATE latin1_german1_ci NOT NULL,
+  PRIMARY KEY (`id`)
+);
+
 CREATE TABLE `xapi_statements` (
   `uuid` varchar(36) COLLATE latin1_german1_ci NOT NULL,
   `actor_id` int(10) unsigned NOT NULL,

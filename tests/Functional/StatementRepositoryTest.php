@@ -11,6 +11,7 @@
 
 namespace Xabbuh\ExperienceApiPlugin\Tests\Functional;
 
+use Xabbuh\ExperienceApiPlugin\Model\LearningRecordStore;
 use Xabbuh\ExperienceApiPlugin\Storage\PdoMysql\StatementRepository;
 use Xabbuh\XApi\Storage\Api\Test\Functional\StatementRepositoryTest as BaseStatementRepositoryTest;
 
@@ -34,7 +35,7 @@ class StatementRepositoryTest extends BaseStatementRepositoryTest
         $dsn = sprintf('mysql:dbname=%s;host=%s;port=%d',$database, $host, $port);
         $this->pdo = new \PDO($dsn, $user, $password);
 
-        return new StatementRepository($this->pdo);
+        return new StatementRepository($this->pdo, new LearningRecordStore(1));
     }
 
     protected function cleanDatabase()

@@ -9,6 +9,7 @@
  * file that was distributed with this source code.
  */
 
+use Xabbuh\ExperienceApiPlugin\Model\LearningRecordStore;
 use Xabbuh\ExperienceApiPlugin\Storage\PdoMysql\StatementRepository;
 use Xabbuh\XApi\Serializer\ActorSerializer;
 use Xabbuh\XApi\Serializer\DocumentDataSerializer;
@@ -31,11 +32,6 @@ class LrsController extends StudipController
      */
     private $serializerRegistry;
 
-    /**
-     * @var StatementRepository
-     */
-    private $statementRepository;
-
     public function __construct($dispatcher)
     {
         parent::__construct($dispatcher);
@@ -46,12 +42,19 @@ class LrsController extends StudipController
         $this->serializerRegistry->setStatementResultSerializer(new StatementResultSerializer($serializer));
         $this->serializerRegistry->setActorSerializer(new ActorSerializer($serializer));
         $this->serializerRegistry->setDocumentDataSerializer(new DocumentDataSerializer($serializer));
-
-        $this->statementRepository = new StatementRepository(DBManager::get());
     }
 
-    public function statements_action()
+    public function statements_action($lrsId)
     {
+        $lrs = new LearningRecordStore($lrsId);
+        $statementRepository = new StatementRepository(DBManager::get(), $lrs);
+
+        if ($lrs->isNew()) {
+            $this->response->set_status(404);
+
+            return;
+        }
+
         $serializer = $this->serializerRegistry->getStatementSerializer();
 
         switch (strtoupper(Request::method())) {
@@ -59,11 +62,11 @@ class LrsController extends StudipController
                 break;
             case 'POST':
                 $statement = $serializer->deserializeStatement($this->getRequestBody());
-                $id = $this->statementRepository->storeStatement($statement);
+                $id = $statementRepository->storeStatement($statement);
                 $this->data = json_encode(array($id));
                 break;
             case 'GET':
-                $statement = $this->statementRepository->findStatementById(Request::get('statementId'));
+                $statement = $statementRepository->findStatementById(Request::get('statementId'));
 
                 if (null === $statement) {
                     $this->response->set_status(404);
@@ -75,6 +78,18 @@ class LrsController extends StudipController
                 break;
             default:
         }
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function extract_action_and_args($path)
+    {
+        if (preg_match('#^(\d+)/(\w+)#', $path, $matches)) {
+            return array($matches[2], array($matches[1]));
+        }
+
+        return parent::extract_action_and_args($path);
     }
 
     private function getRequestBody()

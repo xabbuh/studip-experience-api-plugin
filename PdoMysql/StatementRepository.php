@@ -11,6 +11,7 @@
 
 namespace Xabbuh\ExperienceApiPlugin\Storage\PdoMysql;
 
+use Xabbuh\ExperienceApiPlugin\Model\LearningRecordStore;
 use Xabbuh\XApi\Model\Account;
 use Xabbuh\XApi\Model\Activity;
 use Xabbuh\XApi\Model\Actor;
@@ -36,9 +37,15 @@ class StatementRepository extends BaseStatementRepository
      */
     private $pdo;
 
-    public function __construct(\PDO $pdo)
+    /**
+     * @var LearningRecordStore
+     */
+    private $learningRecordStore;
+
+    public function __construct(\PDO $pdo, LearningRecordStore $learningRecordStore)
     {
         $this->pdo = $pdo;
+        $this->learningRecordStore = $learningRecordStore;
     }
 
     /**
@@ -213,6 +220,7 @@ class StatementRepository extends BaseStatementRepository
                 xapi_statements
             SET
               uuid = :uuid,
+              lrs_id = :lrs_id,
               actor_id = :actor_id,
               verb_iri = :verb_iri,
               verb_display = :verb_display,
@@ -233,6 +241,7 @@ class StatementRepository extends BaseStatementRepository
               duration = :duration'
         );
         $stmt->bindValue(':uuid', $mappedStatement->id);
+        $stmt->bindValue(':lrs_id', $this->learningRecordStore->getId());
         $stmt->bindValue(':actor_id', $actorId);
         $stmt->bindValue(':verb_iri', $mappedStatement->verb->id);
         $stmt->bindValue(':verb_display', serialize($mappedStatement->verb->display));
