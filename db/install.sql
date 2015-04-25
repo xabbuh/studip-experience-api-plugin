@@ -46,5 +46,6 @@ CREATE TABLE `xapi_statements` (
   `completion` tinyint(3) unsigned DEFAULT NULL,
   `response` text DEFAULT NULL,
   `duration` text DEFAULT NULL,
+  `authority_id` int(10) DEFAULT NULL,
   PRIMARY KEY (`uuid`)
 );

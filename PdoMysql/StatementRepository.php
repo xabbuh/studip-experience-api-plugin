@@ -88,21 +88,33 @@ class StatementRepository extends BaseStatementRepository
               s.completion,
               s.response,
               s.duration,
-              a.group_id,
-              a.type,
-              a.name,
-              a.mbox,
-              a.mbox_sha1_sum,
-              a.open_id,
-              a.has_account,
-              a.account_name,
-              a.account_home_page
+              s.authority_id,
+              actor.type AS actor_type,
+              actor.name AS actor_name,
+              actor.mbox AS actor_mbox,
+              actor.mbox_sha1_sum AS actor_mbox_sha1_sum,
+              actor.open_id AS actor_open_id,
+              actor.has_account AS actor_has_account,
+              actor.account_name AS actor_account_name,
+              actor.account_home_page AS actor_account_home_page,
+              authority.type AS authority_type,
+              authority.name AS authority_name,
+              authority.mbox AS authority_mbox,
+              authority.mbox_sha1_sum AS authority_mbox_sha1_sum,
+              authority.open_id AS authority_open_id,
+              authority.has_account AS authority_has_account,
+              authority.account_name AS authority_account_name,
+              authority.account_home_page AS authority_account_home_page
             FROM
               xapi_statements AS s
             INNER JOIN
-              xapi_actors AS a
+              xapi_actors AS actor
             ON
-              s.actor_id = a.id
+              s.actor_id = actor.id
+            LEFT JOIN
+              xapi_actors AS authority
+            ON
+              s.authority_id = authority.id
             WHERE
               s.uuid = :uuid'
         );
@@ -114,43 +126,22 @@ class StatementRepository extends BaseStatementRepository
         while ($data = $stmt->fetch(\PDO::FETCH_ASSOC)) {
             $actorAccount = null;
 
-            if (1 === (int) $data['has_account']) {
-                $actorAccount = new Account($data['account_name'], $data['account_home_page']);
-            }
-
-            if ('agent' === $data['type']) {
-                $actor = new Agent($data['mbox'], $data['mbox_sha1_sum'], $data['open_id'], $actorAccount, $data['name']);
-            } else {
-                $stmt = $this->pdo->prepare(
-                    'SELECT
-                      *
-                    FROM
-                      xapi_actors
-                    WHERE
-                      group_id = :group_id'
-                );
-                $stmt->bindValue(':group_id', $data['actor_id']);
-                $stmt->execute();
-                $members = array();
-
-                while ($row = $stmt->fetch(\PDO::FETCH_ASSOC)) {
-                    $memberAccount = null;
-
-                    if (1 === (int) $row['has_account']) {
-                        $memberAccount = new Account($row['account_name'], $row['account_home_page']);
-                    }
-
-                    $members[] = new Agent($row['mbox'], $row['mbox_sha1_sum'], $row['open_id'], $memberAccount, $row['name']);
-                }
-
-                $actor = new Group($data['mbox'], $data['mbox_sha1_sum'], $data['open_id'], $actorAccount, $data['name'], $members);
-            }
+            $actor = $this->buildActor(array(
+                'actor_id' => $data['actor_id'],
+                'type' => $data['actor_type'],
+                'name' => $data['actor_name'],
+                'mbox' => $data['actor_mbox'],
+                'mbox_sha1_sum' => $data['actor_mbox_sha1_sum'],
+                'open_id' => $data['actor_open_id'],
+                'has_account' => $data['actor_has_account'],
+                'account_name' => $data['actor_account_name'],
+                'account_home_page' => $data['actor_account_home_page'],
+            ));
 
             $mappedVerb = new MappedVerb();
             $mappedVerb->id = $data['verb_iri'];
             $mappedVerb->display = unserialize($data['verb_display']);
 
-            $object = null;
             if ('activity' === $data['object_type']) {
                 $definition = null;
                 if (null !== $data['activity_name'] && null !== $data['activity_description']) {
@@ -163,6 +154,8 @@ class StatementRepository extends BaseStatementRepository
                 $object = new Activity($data['activity_id'], $definition);
             } elseif ('statement_reference' === $data['object_type']) {
                 $object = new StatementReference($data['referenced_statement_id']);
+            } else {
+                $object = null;
             }
 
             $mappedStatement = new MappedStatement();
@@ -181,6 +174,20 @@ class StatementRepository extends BaseStatementRepository
                 );
             }
 
+            if (null !== $data['authority_id']) {
+                $mappedStatement->authority = $this->buildActor(array(
+                    'actor_id' => $data['authority_id'],
+                    'type' => $data['authority_type'],
+                    'name' => $data['authority_name'],
+                    'mbox' => $data['authority_mbox'],
+                    'mbox_sha1_sum' => $data['authority_mbox_sha1_sum'],
+                    'open_id' => $data['authority_open_id'],
+                    'has_account' => $data['authority_has_account'],
+                    'account_name' => $data['authority_account_name'],
+                    'account_home_page' => $data['authority_account_home_page'],
+                ));
+            }
+
             $mappedStatements[] = $mappedStatement;
         }
 
@@ -197,15 +204,7 @@ class StatementRepository extends BaseStatementRepository
         $objectType = null;
 
         // save the actor
-        if ($mappedStatement->actor instanceof Agent) {
-            $actorId = $this->storeActor($mappedStatement->actor, 'agent');
-        } elseif ($mappedStatement->actor instanceof Group) {
-            $actorId = $this->storeActor($mappedStatement->actor, 'group');
-
-            foreach ($mappedStatement->actor->getMembers() as $agent) {
-                $this->storeActor($agent, 'agent', $actorId);
-            }
-        }
+        $actorId = $this->storeActor($mappedStatement->actor);
 
         $result = $mappedStatement->result;
         $activityId = null;
@@ -213,6 +212,11 @@ class StatementRepository extends BaseStatementRepository
         $activityDescription = null;
         $activityType = null;
         $referencedStatementId = null;
+        $authorityId = null;
+
+        if (null !== $mappedStatement->authority) {
+            $authorityId = $this->storeActor($mappedStatement->authority);
+        }
 
         // save the statement itself
         $stmt = $this->pdo->prepare(
@@ -238,7 +242,8 @@ class StatementRepository extends BaseStatementRepository
               success = :success,
               completion = :completion,
               response = :response,
-              duration = :duration'
+              duration = :duration,
+              authority_id = :authority_id'
         );
         $stmt->bindValue(':uuid', $mappedStatement->id);
         $stmt->bindValue(':lrs_id', $this->learningRecordStore->getId());
@@ -277,10 +282,63 @@ class StatementRepository extends BaseStatementRepository
         $stmt->bindValue(':completion', null !== $result ? $result->getCompletion() : null);
         $stmt->bindValue(':response', null !== $result ? $result->getResponse() : null);
         $stmt->bindValue(':duration', null !== $result ? $result->getDuration() : null);
+        $stmt->bindValue(':authority_id', $authorityId);
         $stmt->execute();
     }
 
-    private function storeActor(Actor $actor, $type, $groupId = null)
+    private function buildActor(array $data)
+    {
+        $actorAccount = null;
+
+        if (1 === (int) $data['has_account']) {
+            $actorAccount = new Account($data['account_name'], $data['account_home_page']);
+        }
+
+        if ('agent' === $data['type']) {
+            return new Agent($data['mbox'], $data['mbox_sha1_sum'], $data['open_id'], $actorAccount, $data['name']);
+        }
+
+        $stmt = $this->pdo->prepare(
+            'SELECT
+                  *
+                FROM
+                  xapi_actors
+                WHERE
+                  group_id = :group_id'
+        );
+        $stmt->bindValue(':group_id', $data['actor_id']);
+        $stmt->execute();
+        $members = array();
+
+        while ($row = $stmt->fetch(\PDO::FETCH_ASSOC)) {
+            $memberAccount = null;
+
+            if (1 === (int) $row['has_account']) {
+                $memberAccount = new Account($row['account_name'], $row['account_home_page']);
+            }
+
+            $members[] = new Agent($row['mbox'], $row['mbox_sha1_sum'], $row['open_id'], $memberAccount, $row['name']);
+        }
+
+        return new Group($data['mbox'], $data['mbox_sha1_sum'], $data['open_id'], $actorAccount, $data['name'], $members);
+    }
+
+    private function storeActor(Actor $actor)
+    {
+        if ($actor instanceof Group) {
+            $actorId = $this->persistActor($actor, 'group');
+
+            foreach ($actor->getMembers() as $agent) {
+                $this->persistActor($agent, 'agent', $actorId);
+            }
+
+            return $actorId;
+        }
+
+        return $this->persistActor($actor, 'agent');
+    }
+
+    private function persistActor(Actor $actor, $type, $groupId = null)
     {
         $account = $actor->getAccount();
 
