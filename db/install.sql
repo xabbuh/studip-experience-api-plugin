@@ -28,6 +28,7 @@ CREATE TABLE `xapi_lrs` (
 
 CREATE TABLE `xapi_statements` (
   `uuid` varchar(36) COLLATE latin1_german1_ci NOT NULL,
+  `lrs_id` int(10) unsigned NOT NULL,
   `actor_id` int(10) unsigned NOT NULL,
   `verb_iri` varchar(255) COLLATE latin1_german1_ci NOT NULL,
   `verb_display` text COLLATE latin1_german1_ci NOT NULL,
