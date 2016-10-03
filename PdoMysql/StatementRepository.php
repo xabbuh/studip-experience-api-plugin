@@ -11,7 +11,9 @@
 
 namespace Xabbuh\ExperienceApiPlugin\Storage\PdoMysql;
 
+use Rhumsaa\Uuid\Uuid;
 use Xabbuh\ExperienceApiPlugin\Model\LearningRecordStore;
+use Xabbuh\XApi\Common\Exception\NotFoundException;
 use Xabbuh\XApi\Model\Account;
 use Xabbuh\XApi\Model\Activity;
 use Xabbuh\XApi\Model\Actor;
@@ -21,20 +23,22 @@ use Xabbuh\XApi\Model\Group;
 use Xabbuh\XApi\Model\InverseFunctionalIdentifier;
 use Xabbuh\XApi\Model\IRI;
 use Xabbuh\XApi\Model\IRL;
+use Xabbuh\XApi\Model\LanguageMap;
 use Xabbuh\XApi\Model\Result;
 use Xabbuh\XApi\Model\Score;
+use Xabbuh\XApi\Model\Statement;
 use Xabbuh\XApi\Model\StatementId;
 use Xabbuh\XApi\Model\StatementReference;
-use XApi\Repository\Api\Mapping\MappedStatement;
-use XApi\Repository\Api\Mapping\MappedVerb;
-use XApi\Repository\Api\StatementRepository as BaseStatementRepository;
+use Xabbuh\XApi\Model\StatementsFilter;
+use Xabbuh\XApi\Model\Verb;
+use XApi\Repository\Api\StatementRepositoryInterface;
 
 /**
  * StatementManager implementation for MySQL based on the PHP PDO library.
  *
  * @author Christian Flothmann <christian.flothmann@xabbuh.de>
  */
-class StatementRepository extends BaseStatementRepository
+final class StatementRepository implements StatementRepositoryInterface
 {
     /**
      * @var \PDO
@@ -52,24 +56,166 @@ class StatementRepository extends BaseStatementRepository
         $this->learningRecordStore = $learningRecordStore;
     }
 
-    /**
-     * {@inheritdoc}
-     */
-    protected function findMappedStatement(array $criteria)
+    public function findStatementById(StatementId $statementId, Actor $authority = null)
     {
-        $mappedStatements = $this->findMappedStatements($criteria);
+        $criteria = array(
+            'id' => $statementId->getValue(),
+        );
+        $statements = $this->findStatements($criteria);
 
-        if (1 !== count($mappedStatements)) {
-            return null;
+        if (1 !== count($statements)) {
+            throw new NotFoundException(sprintf('A statement with id "%s" could not be found.', $statementId->getValue()));
         }
 
-        return $mappedStatements[0];
+        $statement = $statements[0];
+
+        if ($statement->isVoidStatement()) {
+            throw new NotFoundException(sprintf('The stored statement with id "%s" is a voiding statement.', $statementId->getValue()));
+        }
+
+        return $statement;
+    }
+
+    public function findVoidedStatementById(StatementId $voidedStatementId, Actor $authority = null)
+    {
+        $criteria = array(
+            'id' => $voidedStatementId->getValue(),
+        );
+        $statements = $this->findStatements($criteria);
+
+        if (1 !== count($statements)) {
+            throw new NotFoundException(sprintf('A voided statement with id "%s" could not be found.', $voidedStatementId->getValue()));
+        }
+
+        $statement = $statements[0];
+
+        if (!$statement->isVoidStatement()) {
+            throw new NotFoundException(sprintf('The stored statement with id "%s" is no voiding statement.', $voidedStatementId->getValue()));
+        }
+
+        return $statement;
+    }
+
+    public function findStatementsBy(StatementsFilter $filter, Actor $authority = null)
+    {
+        $criteria = $filter->getFilter();
+
+        if (null !== $authority) {
+            $criteria['authority'] = $authority;
+        }
+
+        return $this->findStatements($criteria);
+    }
+
+    public function storeStatement(Statement $statement, $flush = true)
+    {
+        if (null === $statement->getId()) {
+            $statement = $statement->withId(StatementId::fromUuid(Uuid::uuid4()));
+        }
+
+        $actorId = null;
+        $objectId = null;
+        $objectType = null;
+
+        // save the actor
+        $actorId = $this->storeActor($statement->getActor());
+
+        $verbDisplay = null;
+        $object = $statement->getObject();
+        $result = $statement->getResult();
+        $activityId = null;
+        $activityName = null;
+        $activityDescription = null;
+        $activityType = null;
+        $referencedStatementId = null;
+        $authorityId = null;
+
+        if (null !== $display = $statement->getVerb()->getDisplay()) {
+            foreach ($display->languageTags() as $languageTag) {
+                $verbDisplay[$languageTag] = $display[$languageTag];
+            }
+        }
+
+        if (null !== $authority = $statement->getAuthority()) {
+            $authorityId = $this->storeActor($authority);
+        }
+
+        // save the statement itself
+        $stmt = $this->pdo->prepare(
+            'INSERT INTO
+                xapi_statements
+            SET
+              uuid = :uuid,
+              lrs_id = :lrs_id,
+              actor_id = :actor_id,
+              verb_iri = :verb_iri,
+              verb_display = :verb_display,
+              object_type = :object_type,
+              activity_id = :activity_id,
+              activity_name = :activity_name,
+              activity_description = :activity_description,
+              activity_type = :activity_type,
+              referenced_statement_id = :referenced_statement_id,
+              has_result = :has_result,
+              scaled = :scaled,
+              raw = :raw,
+              min = :min,
+              max = :max,
+              success = :success,
+              completion = :completion,
+              response = :response,
+              duration = :duration,
+              authority_id = :authority_id'
+        );
+        $stmt->bindValue(':uuid', $statement->getId()->getValue());
+        $stmt->bindValue(':lrs_id', $this->learningRecordStore->getId());
+        $stmt->bindValue(':actor_id', $actorId);
+        $stmt->bindValue(':verb_iri', $statement->getVerb()->getId()->getValue());
+        $stmt->bindValue(':verb_display', serialize($verbDisplay));
+
+        if ($object instanceof Activity) {
+            $definition = $object->getDefinition();
+
+            $objectType = 'activity';
+            $activityId = $object->getId();
+
+            if (null !== $definition) {
+                $activityName = serialize($definition->getName());
+                $activityDescription = serialize($definition->getDescription());
+                $activityType = $definition->getType();
+            }
+        } elseif ($object instanceof StatementReference) {
+            $objectType = 'statement_reference';
+            $referencedStatementId = $object->getStatementId();
+        }
+
+        $stmt->bindValue(':object_type', $objectType);
+        $stmt->bindValue(':activity_id', null !== $activityId ? $activityId->getValue() : null);
+        $stmt->bindValue(':activity_name', $activityName);
+        $stmt->bindValue(':activity_description', $activityDescription);
+        $stmt->bindValue(':activity_type', $activityType);
+        $stmt->bindValue(':referenced_statement_id', null !== $referencedStatementId ? $referencedStatementId->getValue() : null);
+        $stmt->bindValue(':has_result', null !== $result);
+        $stmt->bindValue(':scaled', null !== $result ? $result->getScore()->getScaled() : null);
+        $stmt->bindValue(':raw', null !== $result ? $result->getScore()->getRaw() : null);
+        $stmt->bindValue(':min', null !== $result ? $result->getScore()->getMin() : null);
+        $stmt->bindValue(':max', null !== $result ? $result->getScore()->getMax() : null);
+        $stmt->bindValue(':success', null !== $result ? $result->getSuccess() : null);
+        $stmt->bindValue(':completion', null !== $result ? $result->getCompletion() : null);
+        $stmt->bindValue(':response', null !== $result ? $result->getResponse() : null);
+        $stmt->bindValue(':duration', null !== $result ? $result->getDuration() : null);
+        $stmt->bindValue(':authority_id', $authorityId);
+        $stmt->execute();
+
+        return $statement->getId();
     }
 
     /**
-     * {@inheritdoc}
+     * @param array $criteria
+     *
+     * @return Statement[]
      */
-    protected function findMappedStatements(array $criteria)
+    private function findStatements(array $criteria)
     {
         $stmt = $this->pdo->prepare(
             'SELECT
@@ -125,7 +271,7 @@ class StatementRepository extends BaseStatementRepository
         $stmt->bindValue(':uuid', $criteria['id']);
         $stmt->execute();
 
-        $mappedStatements = array();
+        $statements = array();
 
         while ($data = $stmt->fetch(\PDO::FETCH_ASSOC)) {
             $actorAccount = null;
@@ -142,9 +288,13 @@ class StatementRepository extends BaseStatementRepository
                 'account_home_page' => $data['actor_account_home_page'],
             ));
 
-            $mappedVerb = new MappedVerb();
-            $mappedVerb->id = IRI::fromString($data['verb_iri']);
-            $mappedVerb->display = unserialize($data['verb_display']);
+            $display = null;
+
+            if (null !== $data['verb_display']) {
+                $display = LanguageMap::create(unserialize($data['verb_display']));
+            }
+
+            $verb = new Verb(IRI::fromString($data['verb_iri']), $display);
 
             if ('activity' === $data['object_type']) {
                 $definition = null;
@@ -162,14 +312,10 @@ class StatementRepository extends BaseStatementRepository
                 $object = null;
             }
 
-            $mappedStatement = new MappedStatement();
-            $mappedStatement->id = $data['uuid'];
-            $mappedStatement->actor = $actor;
-            $mappedStatement->verb = $mappedVerb;
-            $mappedStatement->object = $object;
+            $statement = new Statement(StatementId::fromString($data['uuid']), $actor, $verb, $object);
 
             if (1 === (int) $data['has_result']) {
-                $mappedStatement->result = new Result(
+                $statement = $statement->withResult(new Result(
                     new Score(
                         null !== $data['scaled'] ? (float) $data['scaled'] : null,
                         null !== $data['raw'] ? (float) $data['raw'] : null,
@@ -180,11 +326,11 @@ class StatementRepository extends BaseStatementRepository
                     null !== $data['completion'] ? 1 === (int) $data['completion'] : null,
                     $data['response'],
                     $data['duration']
-                );
+                ));
             }
 
             if (null !== $data['authority_id']) {
-                $mappedStatement->authority = $this->buildActor(array(
+                $statement = $statement->withAuthority($this->buildActor(array(
                     'actor_id' => $data['authority_id'],
                     'type' => $data['authority_type'],
                     'name' => $data['authority_name'],
@@ -194,105 +340,13 @@ class StatementRepository extends BaseStatementRepository
                     'has_account' => $data['authority_has_account'],
                     'account_name' => $data['authority_account_name'],
                     'account_home_page' => $data['authority_account_home_page'],
-                ));
+                )));
             }
 
-            $mappedStatements[] = $mappedStatement;
+            $statements[] = $statement;
         }
 
-        return $mappedStatements;
-    }
-
-    /**
-     * {@inheritdoc}
-     */
-    protected function storeMappedStatement(MappedStatement $mappedStatement, $flush)
-    {
-        $actorId = null;
-        $objectId = null;
-        $objectType = null;
-
-        // save the actor
-        $actorId = $this->storeActor($mappedStatement->actor);
-
-        $result = $mappedStatement->result;
-        $activityId = null;
-        $activityName = null;
-        $activityDescription = null;
-        $activityType = null;
-        $referencedStatementId = null;
-        $authorityId = null;
-
-        if (null !== $mappedStatement->authority) {
-            $authorityId = $this->storeActor($mappedStatement->authority);
-        }
-
-        // save the statement itself
-        $stmt = $this->pdo->prepare(
-            'INSERT INTO
-                xapi_statements
-            SET
-              uuid = :uuid,
-              lrs_id = :lrs_id,
-              actor_id = :actor_id,
-              verb_iri = :verb_iri,
-              verb_display = :verb_display,
-              object_type = :object_type,
-              activity_id = :activity_id,
-              activity_name = :activity_name,
-              activity_description = :activity_description,
-              activity_type = :activity_type,
-              referenced_statement_id = :referenced_statement_id,
-              has_result = :has_result,
-              scaled = :scaled,
-              raw = :raw,
-              min = :min,
-              max = :max,
-              success = :success,
-              completion = :completion,
-              response = :response,
-              duration = :duration,
-              authority_id = :authority_id'
-        );
-        $stmt->bindValue(':uuid', $mappedStatement->id);
-        $stmt->bindValue(':lrs_id', $this->learningRecordStore->getId());
-        $stmt->bindValue(':actor_id', $actorId);
-        $stmt->bindValue(':verb_iri', $mappedStatement->verb->id->getValue());
-        $stmt->bindValue(':verb_display', serialize($mappedStatement->verb->display));
-
-        if ($mappedStatement->object instanceof Activity) {
-            $definition = $mappedStatement->object->getDefinition();
-
-            $objectType = 'activity';
-            $activityId = $mappedStatement->object->getId();
-
-            if (null !== $definition) {
-                $activityName = serialize($definition->getName());
-                $activityDescription = serialize($definition->getDescription());
-                $activityType = $definition->getType();
-            }
-        } elseif ($mappedStatement->object instanceof StatementReference) {
-            $objectType = 'statement_reference';
-            $referencedStatementId = $mappedStatement->object->getStatementId();
-        }
-
-        $stmt->bindValue(':object_type', $objectType);
-        $stmt->bindValue(':activity_id', null !== $activityId ? $activityId->getValue() : null);
-        $stmt->bindValue(':activity_name', $activityName);
-        $stmt->bindValue(':activity_description', $activityDescription);
-        $stmt->bindValue(':activity_type', $activityType);
-        $stmt->bindValue(':referenced_statement_id', null !== $referencedStatementId ? $referencedStatementId->getValue() : null);
-        $stmt->bindValue(':has_result', null !== $result);
-        $stmt->bindValue(':scaled', null !== $result ? $result->getScore()->getScaled() : null);
-        $stmt->bindValue(':raw', null !== $result ? $result->getScore()->getRaw() : null);
-        $stmt->bindValue(':min', null !== $result ? $result->getScore()->getMin() : null);
-        $stmt->bindValue(':max', null !== $result ? $result->getScore()->getMax() : null);
-        $stmt->bindValue(':success', null !== $result ? $result->getSuccess() : null);
-        $stmt->bindValue(':completion', null !== $result ? $result->getCompletion() : null);
-        $stmt->bindValue(':response', null !== $result ? $result->getResponse() : null);
-        $stmt->bindValue(':duration', null !== $result ? $result->getDuration() : null);
-        $stmt->bindValue(':authority_id', $authorityId);
-        $stmt->execute();
+        return $statements;
     }
 
     private function buildActor(array $data)
