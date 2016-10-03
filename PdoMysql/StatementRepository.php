@@ -18,12 +18,16 @@ use Xabbuh\XApi\Model\Actor;
 use Xabbuh\XApi\Model\Agent;
 use Xabbuh\XApi\Model\Definition;
 use Xabbuh\XApi\Model\Group;
+use Xabbuh\XApi\Model\InverseFunctionalIdentifier;
+use Xabbuh\XApi\Model\IRI;
+use Xabbuh\XApi\Model\IRL;
 use Xabbuh\XApi\Model\Result;
 use Xabbuh\XApi\Model\Score;
+use Xabbuh\XApi\Model\StatementId;
 use Xabbuh\XApi\Model\StatementReference;
-use Xabbuh\XApi\Storage\Api\Mapping\MappedStatement;
-use Xabbuh\XApi\Storage\Api\Mapping\MappedVerb;
-use Xabbuh\XApi\Storage\Api\StatementRepository as BaseStatementRepository;
+use XApi\Repository\Api\Mapping\MappedStatement;
+use XApi\Repository\Api\Mapping\MappedVerb;
+use XApi\Repository\Api\StatementRepository as BaseStatementRepository;
 
 /**
  * StatementManager implementation for MySQL based on the PHP PDO library.
@@ -139,7 +143,7 @@ class StatementRepository extends BaseStatementRepository
             ));
 
             $mappedVerb = new MappedVerb();
-            $mappedVerb->id = $data['verb_iri'];
+            $mappedVerb->id = IRI::fromString($data['verb_iri']);
             $mappedVerb->display = unserialize($data['verb_display']);
 
             if ('activity' === $data['object_type']) {
@@ -151,9 +155,9 @@ class StatementRepository extends BaseStatementRepository
                         $data['activity_type']
                     );
                 }
-                $object = new Activity($data['activity_id'], $definition);
+                $object = new Activity(IRI::fromString($data['activity_id']), $definition);
             } elseif ('statement_reference' === $data['object_type']) {
-                $object = new StatementReference($data['referenced_statement_id']);
+                $object = new StatementReference(StatementId::fromString($data['referenced_statement_id']));
             } else {
                 $object = null;
             }
@@ -166,9 +170,14 @@ class StatementRepository extends BaseStatementRepository
 
             if (1 === (int) $data['has_result']) {
                 $mappedStatement->result = new Result(
-                    new Score($data['scaled'], $data['raw'], $data['min'], $data['max']),
-                    1 === (int) $data['success'],
-                    1 === (int) $data['completion'],
+                    new Score(
+                        null !== $data['scaled'] ? (float) $data['scaled'] : null,
+                        null !== $data['raw'] ? (float) $data['raw'] : null,
+                        null !== $data['min'] ? (float) $data['min'] : null,
+                        null !== $data['max'] ? (float) $data['max'] : null
+                    ),
+                    null !== $data['success'] ? 1 === (int) $data['success'] : null,
+                    null !== $data['completion'] ? 1 === (int) $data['completion'] : null,
                     $data['response'],
                     $data['duration']
                 );
@@ -248,7 +257,7 @@ class StatementRepository extends BaseStatementRepository
         $stmt->bindValue(':uuid', $mappedStatement->id);
         $stmt->bindValue(':lrs_id', $this->learningRecordStore->getId());
         $stmt->bindValue(':actor_id', $actorId);
-        $stmt->bindValue(':verb_iri', $mappedStatement->verb->id);
+        $stmt->bindValue(':verb_iri', $mappedStatement->verb->id->getValue());
         $stmt->bindValue(':verb_display', serialize($mappedStatement->verb->display));
 
         if ($mappedStatement->object instanceof Activity) {
@@ -268,11 +277,11 @@ class StatementRepository extends BaseStatementRepository
         }
 
         $stmt->bindValue(':object_type', $objectType);
-        $stmt->bindValue(':activity_id', $activityId);
+        $stmt->bindValue(':activity_id', null !== $activityId ? $activityId->getValue() : null);
         $stmt->bindValue(':activity_name', $activityName);
         $stmt->bindValue(':activity_description', $activityDescription);
         $stmt->bindValue(':activity_type', $activityType);
-        $stmt->bindValue(':referenced_statement_id', $referencedStatementId);
+        $stmt->bindValue(':referenced_statement_id', null !== $referencedStatementId ? $referencedStatementId->getValue() : null);
         $stmt->bindValue(':has_result', null !== $result);
         $stmt->bindValue(':scaled', null !== $result ? $result->getScore()->getScaled() : null);
         $stmt->bindValue(':raw', null !== $result ? $result->getScore()->getRaw() : null);
@@ -291,11 +300,11 @@ class StatementRepository extends BaseStatementRepository
         $actorAccount = null;
 
         if (1 === (int) $data['has_account']) {
-            $actorAccount = new Account($data['account_name'], $data['account_home_page']);
+            $actorAccount = new Account($data['account_name'], IRL::fromString($data['account_home_page']));
         }
 
         if ('agent' === $data['type']) {
-            return new Agent($data['mbox'], $data['mbox_sha1_sum'], $data['open_id'], $actorAccount, $data['name']);
+            return new Agent($this->buildInverseFunctionalIdentifier($data, $actorAccount), $data['name']);
         }
 
         $stmt = $this->pdo->prepare(
@@ -314,13 +323,36 @@ class StatementRepository extends BaseStatementRepository
             $memberAccount = null;
 
             if (1 === (int) $row['has_account']) {
-                $memberAccount = new Account($row['account_name'], $row['account_home_page']);
+                $memberAccount = new Account($row['account_name'], IRL::fromString($row['account_home_page']));
             }
 
-            $members[] = new Agent($row['mbox'], $row['mbox_sha1_sum'], $row['open_id'], $memberAccount, $row['name']);
+            $members[] = new Agent($this->buildInverseFunctionalIdentifier($row, $memberAccount), $row['name']);
         }
 
-        return new Group($data['mbox'], $data['mbox_sha1_sum'], $data['open_id'], $actorAccount, $data['name'], $members);
+        return new Group($this->buildInverseFunctionalIdentifier($data), $data['name'], $members);
+    }
+
+    private function buildInverseFunctionalIdentifier(array $data, Account $account = null)
+    {
+        $iri = null;
+
+        if (null !== $data['mbox']) {
+            $iri = InverseFunctionalIdentifier::withMbox(IRI::fromString($data['mbox']));
+        }
+
+        if (null !== $data['mbox_sha1_sum']) {
+            $iri = InverseFunctionalIdentifier::withMboxSha1Sum($data['mbox_sha1_sum']);
+        }
+
+        if (null !== $data['open_id']) {
+            $iri = InverseFunctionalIdentifier::withOpenId($data['open_id']);
+        }
+
+        if (null !== $account) {
+            $iri = InverseFunctionalIdentifier::withAccount($account);
+        }
+
+        return $iri;
     }
 
     private function storeActor(Actor $actor)
@@ -340,7 +372,8 @@ class StatementRepository extends BaseStatementRepository
 
     private function persistActor(Actor $actor, $type, $groupId = null)
     {
-        $account = $actor->getAccount();
+        $iri = $actor->getInverseFunctionalIdentifier();
+        $account = $iri->getAccount();
 
         $stmt = $this->pdo->prepare(
             'INSERT INTO
@@ -359,12 +392,12 @@ class StatementRepository extends BaseStatementRepository
         $stmt->bindValue(':group_id', $groupId);
         $stmt->bindValue(':type', $type);
         $stmt->bindValue(':name', $actor->getName());
-        $stmt->bindValue(':mbox', $actor->getMbox());
-        $stmt->bindValue(':mbox_sha1_sum', $actor->getMboxSha1Sum());
-        $stmt->bindValue(':open_id', $actor->getOpenId());
+        $stmt->bindValue(':mbox', null !== $iri->getMbox() ? $iri->getMbox()->getValue() : null);
+        $stmt->bindValue(':mbox_sha1_sum', $iri->getMboxSha1Sum());
+        $stmt->bindValue(':open_id', $iri->getOpenId());
         $stmt->bindValue(':has_account', null !== $account);
         $stmt->bindValue(':account_name', null !== $account ? $account->getName() : null);
-        $stmt->bindValue(':account_home_page', null !== $account ? $account->getHomePage() : null);
+        $stmt->bindValue(':account_home_page', null !== $account ? $account->getHomePage()->getValue() : null);
         $stmt->execute();
 
         return $this->pdo->lastInsertId();

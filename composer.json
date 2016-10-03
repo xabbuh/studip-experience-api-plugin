@@ -19,10 +19,11 @@
     },
     "require": {
         "php": "~5.3",
-        "xabbuh/xapi-model": "~1.0",
-        "xabbuh/xapi-storage-api": "~1.0",
-        "xabbuh/xapi-serializer": "~1.0",
-        "xabbuh/xapi-validator": "~1.0"
+        "php-xapi/model": "^1.0.1",
+        "php-xapi/repository-api": "~0.2",
+        "php-xapi/serializer": "~1.0",
+        "php-xapi/symfony-serializer": "~1.0",
+        "php-xapi/validation": "~0.2"
     },
     "minimum-stability": "dev",
     "prefer-stable": true

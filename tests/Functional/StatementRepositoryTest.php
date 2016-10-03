@@ -13,7 +13,7 @@ namespace Xabbuh\ExperienceApiPlugin\Tests\Functional;
 
 use Xabbuh\ExperienceApiPlugin\Model\LearningRecordStore;
 use Xabbuh\ExperienceApiPlugin\Storage\PdoMysql\StatementRepository;
-use Xabbuh\XApi\Storage\Api\Test\Functional\StatementRepositoryTest as BaseStatementRepositoryTest;
+use XApi\Repository\Api\Test\Functional\StatementRepositoryTest as BaseStatementRepositoryTest;
 
 /**
  * @author Christian Flothmann <christian.flothmann@xabbuh.de>
