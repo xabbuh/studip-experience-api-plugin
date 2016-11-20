@@ -18,6 +18,7 @@ use Xabbuh\XApi\Model\Account;
 use Xabbuh\XApi\Model\Activity;
 use Xabbuh\XApi\Model\Actor;
 use Xabbuh\XApi\Model\Agent;
+use Xabbuh\XApi\Model\Attachment;
 use Xabbuh\XApi\Model\Definition;
 use Xabbuh\XApi\Model\Group;
 use Xabbuh\XApi\Model\InverseFunctionalIdentifier;
@@ -30,6 +31,7 @@ use Xabbuh\XApi\Model\Statement;
 use Xabbuh\XApi\Model\StatementId;
 use Xabbuh\XApi\Model\StatementReference;
 use Xabbuh\XApi\Model\StatementsFilter;
+use Xabbuh\XApi\Model\SubStatement;
 use Xabbuh\XApi\Model\Verb;
 use XApi\Repository\Api\StatementRepositoryInterface;
 
@@ -165,7 +167,10 @@ final class StatementRepository implements StatementRepositoryInterface
               completion = :completion,
               response = :response,
               duration = :duration,
-              authority_id = :authority_id'
+              extensions = :extensions,
+              authority_id = :authority_id,
+              created = :created,
+              `stored` = :stored'
         );
         $stmt->bindValue(':uuid', $statement->getId()->getValue());
         $stmt->bindValue(':lrs_id', $this->learningRecordStore->getId());
@@ -182,11 +187,24 @@ final class StatementRepository implements StatementRepositoryInterface
             if (null !== $definition) {
                 $activityName = serialize($definition->getName());
                 $activityDescription = serialize($definition->getDescription());
-                $activityType = $definition->getType();
+                $activityType = $definition->getType()->getValue();
             }
         } elseif ($object instanceof StatementReference) {
             $objectType = 'statement_reference';
             $referencedStatementId = $object->getStatementId();
+        } elseif ($object instanceof SubStatement) {
+            $objectType = 'sub_statement';
+            $subStatement = new Statement(
+                null,
+                $object->getActor(),
+                $object->getVerb(),
+                $object->getObject(),
+                $object->getResult(),
+                $object->getContext(),
+                $object->getTimestamp(),
+                $object->getAttachments()
+            );
+            $referencedStatementId = $this->storeStatement($subStatement);
         }
 
         $stmt->bindValue(':object_type', $objectType);
@@ -195,7 +213,7 @@ final class StatementRepository implements StatementRepositoryInterface
         $stmt->bindValue(':activity_description', $activityDescription);
         $stmt->bindValue(':activity_type', $activityType);
         $stmt->bindValue(':referenced_statement_id', null !== $referencedStatementId ? $referencedStatementId->getValue() : null);
-        $stmt->bindValue(':has_result', null !== $result);
+        $stmt->bindValue(':has_result', null !== $result ? 1 : 0);
         $stmt->bindValue(':scaled', null !== $result ? $result->getScore()->getScaled() : null);
         $stmt->bindValue(':raw', null !== $result ? $result->getScore()->getRaw() : null);
         $stmt->bindValue(':min', null !== $result ? $result->getScore()->getMin() : null);
@@ -204,8 +222,50 @@ final class StatementRepository implements StatementRepositoryInterface
         $stmt->bindValue(':completion', null !== $result ? $result->getCompletion() : null);
         $stmt->bindValue(':response', null !== $result ? $result->getResponse() : null);
         $stmt->bindValue(':duration', null !== $result ? $result->getDuration() : null);
+        $stmt->bindValue(':extensions', null !== $result && null !== $result->getExtensions() ? serialize($result->getExtensions()) : null);
         $stmt->bindValue(':authority_id', $authorityId);
+        $stmt->bindValue(':created', null !== $statement->getTimestamp() ? $statement->getTimestamp()->getTimestamp() : null);
+        $stmt->bindValue(':stored', null !== $statement->getStored() ? $statement->getStored()->getTimestamp() : null);
         $stmt->execute();
+
+        if (null !== $statement->getAttachments()) {
+            foreach ($statement->getAttachments() as $attachment) {
+                $stmt = $this->pdo->prepare(
+                    'INSERT INTO
+                      xapi_attachments
+                    SET
+                      usage_type = :usage_type,
+                      content_type = :content_type,
+                      length = :length,
+                      sha2 = :sha2,
+                      display = :display,
+                      description = :description,
+                      file_url = :file_url,
+                      content = :content'
+                );
+                $stmt->bindValue(':usage_type', $attachment->getUsageType()->getValue());
+                $stmt->bindValue(':content_type', $attachment->getContentType());
+                $stmt->bindValue(':length', $attachment->getLength());
+                $stmt->bindValue(':sha2', $attachment->getSha2());
+                $stmt->bindValue(':display', serialize($attachment->getDisplay()));
+                $stmt->bindValue(':description', null !== $attachment->getDescription() ? serialize($attachment->getDescription()) : null);
+                $stmt->bindValue(':file_url', null !== $attachment->getFileUrl() ? $attachment->getFileUrl()->getValue() : null);
+                $stmt->bindValue(':content', $attachment->getContent());
+                $stmt->execute();
+                $attachmentId = $this->pdo->lastInsertId();
+
+                $stmt = $this->pdo->prepare(
+                    'INSERT INTO
+                      xapi_statement_attachment
+                    SET
+                      statement_id = :statement_id,
+                      attachment_id = :attachment_id'
+                );
+                $stmt->bindValue(':statement_id', $statement->getId()->getValue());
+                $stmt->bindValue(':attachment_id', $attachmentId);
+                $stmt->execute();
+            }
+        }
 
         return $statement->getId();
     }
@@ -238,7 +298,10 @@ final class StatementRepository implements StatementRepositoryInterface
               s.completion,
               s.response,
               s.duration,
+              s.extensions,
               s.authority_id,
+              s.created,
+              s.stored,
               actor.type AS actor_type,
               actor.name AS actor_name,
               actor.mbox AS actor_mbox,
@@ -302,12 +365,23 @@ final class StatementRepository implements StatementRepositoryInterface
                     $definition = new Definition(
                         unserialize($data['activity_name']),
                         unserialize($data['activity_description']),
-                        $data['activity_type']
+                        IRI::fromString($data['activity_type'])
                     );
                 }
                 $object = new Activity(IRI::fromString($data['activity_id']), $definition);
             } elseif ('statement_reference' === $data['object_type']) {
                 $object = new StatementReference(StatementId::fromString($data['referenced_statement_id']));
+            } elseif ('sub_statement' === $data['object_type']) {
+                $subStatement = $this->findStatementById(StatementId::fromString($data['referenced_statement_id']));
+                $object = new SubStatement(
+                    $subStatement->getActor(),
+                    $subStatement->getVerb(),
+                    $subStatement->getObject(),
+                    $subStatement->getResult(),
+                    $subStatement->getContext(),
+                    $subStatement->getTimestamp(),
+                    $subStatement->getAttachments()
+                );
             } else {
                 $object = null;
             }
@@ -325,7 +399,8 @@ final class StatementRepository implements StatementRepositoryInterface
                     null !== $data['success'] ? 1 === (int) $data['success'] : null,
                     null !== $data['completion'] ? 1 === (int) $data['completion'] : null,
                     $data['response'],
-                    $data['duration']
+                    $data['duration'],
+                    null !== $data['extensions'] ? unserialize($data['extensions']) : null
                 ));
             }
 
@@ -341,6 +416,55 @@ final class StatementRepository implements StatementRepositoryInterface
                     'account_name' => $data['authority_account_name'],
                     'account_home_page' => $data['authority_account_home_page'],
                 )));
+            }
+
+            if (null !== $data['created']) {
+                $statement = $statement->withTimestamp(new \DateTime('@'.$data['created']));
+            }
+
+            if (null !== $data['stored']) {
+                $statement = $statement->withStored(new \DateTime('@'.$data['stored']));
+            }
+
+            $attachmentStmt = $this->pdo->prepare(
+                'SELECT
+                  a.usage_type,
+                  a.content_type,
+                  a.length,
+                  a.sha2,
+                  a.display,
+                  a.description,
+                  a.file_url,
+                  a.content
+                FROM
+                  xapi_attachments AS a
+                INNER JOIN
+                  xapi_statement_attachment AS sa
+                ON
+                  a.id = sa.attachment_id
+                WHERE
+                  sa.statement_id = :statement_id'
+            );
+            $attachmentStmt->bindValue('statement_id', $data['uuid']);
+            $attachmentStmt->execute();
+
+            if ($attachmentStmt->rowCount() > 0) {
+                $attachments = array();
+
+                while ($attachmentData = $attachmentStmt->fetch(\PDO::FETCH_ASSOC)) {
+                    $attachments[] = new Attachment(
+                        IRI::fromString($attachmentData['usage_type']),
+                        $attachmentData['content_type'],
+                        (int) $attachmentData['length'],
+                        $attachmentData['sha2'],
+                        unserialize($attachmentData['display']),
+                        null !== $attachmentData['description'] ? unserialize($attachmentData['description']) : null,
+                        null !== $attachmentData['file_url'] ? IRL::fromString($attachmentData['file_url']) : null,
+                        $attachmentData['content']
+                    );
+                }
+
+                $statement = $statement->withAttachments($attachments);
             }
 
             $statements[] = $statement;
@@ -449,7 +573,7 @@ final class StatementRepository implements StatementRepositoryInterface
         $stmt->bindValue(':mbox', null !== $iri->getMbox() ? $iri->getMbox()->getValue() : null);
         $stmt->bindValue(':mbox_sha1_sum', $iri->getMboxSha1Sum());
         $stmt->bindValue(':open_id', $iri->getOpenId());
-        $stmt->bindValue(':has_account', null !== $account);
+        $stmt->bindValue(':has_account', null !== $account ? 1 : 0);
         $stmt->bindValue(':account_name', null !== $account ? $account->getName() : null);
         $stmt->bindValue(':account_home_page', null !== $account ? $account->getHomePage()->getValue() : null);
         $stmt->execute();

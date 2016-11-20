@@ -12,6 +12,19 @@ CREATE TABLE `xapi_actors` (
   PRIMARY KEY (`id`)
 );
 
+CREATE TABLE `xapi_attachments` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `usage_type` varchar(255) COLLATE latin1_german1_ci DEFAULT NULL,
+  `content_type` varchar(255) COLLATE latin1_german1_ci DEFAULT NULL,
+  `length` int(10) unsigned DEFAULT NULL,
+  `sha2` varchar(255) COLLATE latin1_german1_ci DEFAULT NULL,
+  `display` text COLLATE latin1_german1_ci NOT NULL,
+  `description` text COLLATE latin1_german1_ci DEFAULT NULL,
+  `file_url` varchar(255) COLLATE latin1_german1_ci DEFAULT NULL,
+  `content` blob DEFAULT NULL,
+  PRIMARY KEY (`id`)
+);
+
 CREATE TABLE `xapi_course_lrs` (
   `course_id` varchar(255) COLLATE latin1_german1_ci NOT NULL,
   `lrs_id` int(10) unsigned NOT NULL,
@@ -26,13 +39,19 @@ CREATE TABLE `xapi_lrs` (
   PRIMARY KEY (`id`)
 );
 
+CREATE TABLE `xapi_statement_attachment` (
+  `statement_id` varchar(36) COLLATE latin1_german1_ci NOT NULL,
+  `attachment_id` int(10) unsigned NOT NULL,
+  PRIMARY KEY (`statement_id`, `attachment_id`)
+);
+
 CREATE TABLE `xapi_statements` (
   `uuid` varchar(36) COLLATE latin1_german1_ci NOT NULL,
   `lrs_id` int(10) unsigned NOT NULL,
   `actor_id` int(10) unsigned NOT NULL,
   `verb_iri` varchar(255) COLLATE latin1_german1_ci NOT NULL,
   `verb_display` text COLLATE latin1_german1_ci NOT NULL,
-  `object_type` enum('activity','statement_reference') COLLATE latin1_german1_ci NOT NULL,
+  `object_type` enum('activity','statement_reference', 'sub_statement') COLLATE latin1_german1_ci NOT NULL,
   `activity_id` varchar(255) COLLATE latin1_german1_ci DEFAULT NULL,
   `activity_name` text COLLATE latin1_german1_ci DEFAULT NULL,
   `activity_description` text COLLATE latin1_german1_ci DEFAULT NULL,
@@ -47,6 +66,9 @@ CREATE TABLE `xapi_statements` (
   `completion` tinyint(3) unsigned DEFAULT NULL,
   `response` text DEFAULT NULL,
   `duration` text DEFAULT NULL,
+  `extensions` text DEFAULT NULL,
   `authority_id` int(10) DEFAULT NULL,
+  `created` int(10) DEFAULT NULL,
+  `stored` int(10) DEFAULT NULL,
   PRIMARY KEY (`uuid`)
 );

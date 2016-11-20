@@ -25,6 +25,22 @@ class StatementRepositoryTest extends BaseStatementRepositoryTest
      */
     private $pdo;
 
+    public function getStatementsWithId()
+    {
+        $fixtures = parent::getStatementsWithId();
+        unset($fixtures['getAllPropertiesStatement']);
+
+        return $fixtures;
+    }
+
+    public function getStatementsWithoutId()
+    {
+        $fixtures = parent::getStatementsWithoutId();
+        unset($fixtures['getAllPropertiesStatement']);
+
+        return $fixtures;
+    }
+
     protected function createStatementRepository()
     {
         $host = $_ENV['mysql_host'];
@@ -41,8 +57,8 @@ class StatementRepositoryTest extends BaseStatementRepositoryTest
     protected function cleanDatabase()
     {
         $this->pdo->exec('TRUNCATE xapi_actors');
-        $this->pdo->exec('TRUNCATE xapi_objects');
+        $this->pdo->exec('TRUNCATE xapi_attachments');
+        $this->pdo->exec('TRUNCATE xapi_statement_attachment');
         $this->pdo->exec('TRUNCATE xapi_statements');
-        $this->pdo->exec('TRUNCATE xapi_verbs');
     }
 }
