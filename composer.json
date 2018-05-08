@@ -24,7 +24,8 @@
         "php-xapi/serializer": "~1.0",
         "php-xapi/symfony-serializer": "~1.0",
         "php-xapi/validation": "~0.2",
-        "ramsey/uuid": "^2.9"
+        "ramsey/uuid": "^2.9",
+        "symfony/phpunit-bridge": "^3.4 || ^4.0"
     },
     "minimum-stability": "dev",
     "prefer-stable": true
